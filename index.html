@@ -53,7 +53,7 @@ border:1px solid #333;
 }
 
 #terminal{
-height:160px;
+height:180px;
 background:black;
 padding:10px;
 overflow:auto;
@@ -71,7 +71,7 @@ td,th{border:1px solid #555;padding:5px;}
 
 <body>
 
-<header>Pro Mobile IDE</header>
+<header>Pro Mobile IDE (Fixed)</header>
 
 <div>
 <select id="projectSelect" onchange="loadProject()"></select>
@@ -221,6 +221,7 @@ document.getElementById("preview").srcdoc=full;
 }
 
 async function runCode(){
+
 projects[currentProject][currentTab]=editor.getValue();
 saveProjects();
 
@@ -229,42 +230,64 @@ updatePreview();
 log("Preview Updated","success");
 }
 
+/* -------- PYTHON FIXED -------- */
 if(currentTab==="python"){
 try{
+
 pyodide.runPython(`
 import sys
-from js import prompt
-def input(x=""):
- return prompt(x)
+from io import StringIO
+sys.stdout = StringIO()
 `);
-let result=await pyodide.runPythonAsync(editor.getValue());
-log(result||"Done","success");
+
+await pyodide.runPythonAsync(editor.getValue());
+
+let printed = pyodide.runPython("sys.stdout.getvalue()");
+
+if(printed){
+log(printed.trim(),"success");
+}else{
+log("Execution completed.","info");
+}
+
 }catch(err){
 log(err,"error");
 }
 }
 
+/* -------- SQL FIXED -------- */
 if(currentTab==="sql"){
 try{
-let result=db.exec(editor.getValue());
+
+let selected = editor.getSelection();
+let sqlCode = selected ? selected : editor.getValue();
+
+let result=db.exec(sqlCode);
+
 if(result.length===0){
-log("Query executed","success");
+log("Query executed successfully","success");
 }else{
+
 let table="<table><tr>";
 result[0].columns.forEach(c=>table+="<th>"+c+"</th>");
 table+="</tr>";
+
 result[0].values.forEach(row=>{
 table+="<tr>";
 row.forEach(cell=>table+="<td>"+cell+"</td>");
 table+="</tr>";
 });
+
 table+="</table>";
+
 log(table,"info");
 }
+
 }catch(err){
 log(err,"error");
 }
 }
+
 }
 
 async function downloadZIP(){
