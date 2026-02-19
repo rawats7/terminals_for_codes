@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mobile Terminal Playground</title>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+
+<style>
+body{
+    margin:0;
+    background:#121212;
+    color:white;
+    font-family:monospace;
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+}
+
+header{
+    background:#1e1e1e;
+    padding:10px;
+    text-align:center;
+    font-weight:bold;
+}
+
+.controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    padding:5px;
+}
+
+select,button{
+    padding:6px;
+    background:#1e1e1e;
+    color:white;
+    border:1px solid #333;
+}
+
+textarea{
+    flex:1;
+    background:#1e1e1e;
+    color:#00ff88;
+    border:none;
+    padding:10px;
+    resize:none;
+    outline:none;
+}
+
+#output{
+    min-height:150px;
+    background:black;
+    padding:10px;
+    overflow:auto;
+    font-size:14px;
+}
+
+/* Terminal colors */
+.success{ color:#00ff88; }
+.error{ color:#ff4c4c; }
+.info{ color:#4da6ff; }
+.warning{ color:#ffcc00; }
+</style>
+</head>
+
+<body>
+
+<header>Mobile Code Terminal</header>
+
+<div class="controls">
+<select id="language">
+<option value="python">Python</option>
+<option value="sql">SQL</option>
+</select>
+
+<select onchange="changeEditorColor(this.value)">
+<option value="#00ff88">Green</option>
+<option value="#ffffff">White</option>
+<option value="#ffcc00">Yellow</option>
+<option value="#4da6ff">Blue</option>
+<option value="#ff4c4c">Red</option>
+</select>
+
+<button onclick="runCode()">Run</button>
+<button onclick="clearTerminal()">Clear</button>
+</div>
+
+<textarea id="code">print("Hello Raj")</textarea>
+
+<div id="output"></div>
+
+<script>
+let pyodide;
+let db;
+
+const outputDiv = document.getElementById("output");
+const codeArea = document.getElementById("code");
+
+async function init(){
+    pyodide = await loadPyodide();
+
+    const SQL = await initSqlJs({
+        locateFile: file =>
+        `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+    });
+
+    db = new SQL.Database();
+}
+init();
+
+function logMessage(message, type){
+    const div = document.createElement("div");
+    div.className = type;
+    div.textContent = message;
+    outputDiv.appendChild(div);
+    outputDiv.scrollTop = outputDiv.scrollHeight;
+}
+
+function clearTerminal(){
+    outputDiv.innerHTML="";
+}
+
+function changeEditorColor(color){
+    codeArea.style.color = color;
+}
+
+async function runCode(){
+    const lang = document.getElementById("language").value;
+    const code = codeArea.value;
+
+    logMessage(">>> Executing...", "info");
+
+    if(lang==="python"){
+        try{
+            pyodide.runPython(`
+import sys
+from io import StringIO
+sys.stdout = StringIO()
+            `);
+
+            await pyodide.runPythonAsync(code);
+
+            const printed = pyodide.runPython("sys.stdout.getvalue()");
+            
+            if(printed){
+                logMessage(printed.trim(), "success");
+            }else{
+                logMessage("Execution completed.", "success");
+            }
+
+        }catch(err){
+            logMessage(err, "error");
+            logMessage("Suggestion: Check syntax or indentation.", "warning");
+        }
+    }
+
+    if(lang==="sql"){
+        try{
+            const result = db.exec(code);
+
+            if(result.length===0){
+                logMessage("Query executed successfully.", "success");
+            }else{
+                logMessage("Query returned results:", "info");
+
+                result[0].values.forEach(row=>{
+                    logMessage(JSON.stringify(row), "success");
+                });
+            }
+
+        }catch(err){
+            logMessage(err, "error");
+            logMessage("Suggestion: Check SQL syntax (missing semicolon?).", "warning");
+        }
+    }
+}
+</script>
+
+</body>
+</html>
