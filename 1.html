@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mobile Pro Playground</title>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+body{
+    margin:0;
+    background:#121212;
+    color:white;
+    font-family:monospace;
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+}
+
+header{
+    background:#1e1e1e;
+    padding:10px;
+    text-align:center;
+    font-weight:bold;
+}
+
+.controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    padding:5px;
+}
+
+select,button{
+    padding:6px;
+    background:#1e1e1e;
+    color:white;
+    border:1px solid #333;
+}
+
+.editor-wrapper{
+    flex:1;
+    display:flex;
+    overflow:hidden;
+}
+
+#lineNumbers{
+    background:#1e1e1e;
+    padding:10px 5px;
+    text-align:right;
+    color:#666;
+    overflow:hidden;
+}
+
+textarea{
+    flex:1;
+    background:#1e1e1e;
+    color:#00ff88;
+    border:none;
+    padding:10px;
+    resize:none;
+    outline:none;
+}
+
+#output{
+    min-height:120px;
+    background:black;
+    color:#00ff88;
+    padding:10px;
+    overflow:auto;
+}
+
+table{
+    border-collapse:collapse;
+    width:100%;
+}
+td,th{
+    border:1px solid #555;
+    padding:5px;
+}
+</style>
+</head>
+
+<body>
+
+<header>Mobile Pro Playground</header>
+
+<div class="controls">
+<select id="language">
+<option value="python">Python</option>
+<option value="sql">SQL</option>
+</select>
+
+<button onclick="runCode()">Run</button>
+<button onclick="downloadSingle()">Download File</button>
+<button onclick="downloadZIP()">Download ZIP</button>
+<button onclick="resetAll()">Reset</button>
+</div>
+
+<div class="editor-wrapper">
+<div id="lineNumbers">1</div>
+<textarea id="code"></textarea>
+</div>
+
+<div id="output">Output here...</div>
+
+<script>
+let pyodide;
+let db;
+let SQL;
+
+const codeArea = document.getElementById("code");
+const lineNumbers = document.getElementById("lineNumbers");
+const outputDiv = document.getElementById("output");
+const languageSelect = document.getElementById("language");
+
+codeArea.value = localStorage.getItem("savedCode") || "print('Hello Raj')";
+
+updateLineNumbers();
+restoreDatabase();
+
+async function init(){
+    pyodide = await loadPyodide();
+
+    SQL = await initSqlJs({
+        locateFile: file =>
+        `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+    });
+
+    if(!db){
+        db = new SQL.Database();
+    }
+}
+init();
+
+codeArea.addEventListener("input", ()=>{
+    localStorage.setItem("savedCode", codeArea.value);
+    updateLineNumbers();
+});
+
+function updateLineNumbers(){
+    const lines = codeArea.value.split("\n").length;
+    let numbers="";
+    for(let i=1;i<=lines;i++){
+        numbers+=i+"<br>";
+    }
+    lineNumbers.innerHTML=numbers;
+}
+
+function getSelectedText(){
+    const start = codeArea.selectionStart;
+    const end = codeArea.selectionEnd;
+    return start!==end ? codeArea.value.substring(start,end) : codeArea.value;
+}
+
+async function runCode(){
+    const lang = languageSelect.value;
+    const code = getSelectedText();
+
+    outputDiv.innerHTML="Running...";
+
+    if(lang==="python"){
+        try{
+            pyodide.runPython(`
+import sys
+from io import StringIO
+sys.stdout = StringIO()
+            `);
+
+            await pyodide.runPythonAsync(code);
+
+            const printed = pyodide.runPython("sys.stdout.getvalue()");
+            outputDiv.innerText = printed || "Done";
+
+        }catch(err){
+            outputDiv.innerText=err;
+        }
+    }
+
+    if(lang==="sql"){
+        try{
+            const results = db.exec(code);
+
+            if(results.length===0){
+                outputDiv.innerText="Query executed.";
+            }else{
+                let table="<table><tr>";
+                results[0].columns.forEach(col=>{
+                    table+=`<th>${col}</th>`;
+                });
+                table+="</tr>";
+
+                results[0].values.forEach(row=>{
+                    table+="<tr>";
+                    row.forEach(cell=>{
+                        table+=`<td>${cell}</td>`;
+                    });
+                    table+="</tr>";
+                });
+
+                table+="</table>";
+                outputDiv.innerHTML=table;
+            }
+
+            saveDatabase();
+
+        }catch(err){
+            outputDiv.innerText=err;
+        }
+    }
+}
+
+function saveDatabase(){
+    const data = db.export();
+    const base64 = btoa(String.fromCharCode(...data));
+    localStorage.setItem("sqlDB", base64);
+}
+
+function restoreDatabase(){
+    const saved = localStorage.getItem("sqlDB");
+    if(saved){
+        const binary = Uint8Array.from(atob(saved), c=>c.charCodeAt(0));
+        db = new SQL.Database(binary);
+    }
+}
+
+function downloadSingle(){
+    const blob = new Blob([codeArea.value], {type:"text/plain"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = languageSelect.value+".txt";
+    link.click();
+}
+
+async function downloadZIP(){
+    const zip = new JSZip();
+    zip.file(languageSelect.value+".txt", codeArea.value);
+
+    const content = await zip.generateAsync({type:"blob"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(content);
+    link.download = "project.zip";
+    link.click();
+}
+
+function resetAll(){
+    localStorage.clear();
+    location.reload();
+}
+</script>
+
+</body>
+</html>
