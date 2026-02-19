@@ -3,11 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ultimate Mobile IDE</title>
+<title>Ultimate Mobile IDE v2</title>
 
 <!-- CodeMirror -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/material.min.css">
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/material.min.css">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
@@ -21,67 +23,75 @@
 
 <style>
 body{
-    margin:0;
-    background:#121212;
-    color:white;
-    font-family:monospace;
-    display:flex;
-    flex-direction:column;
-    height:100vh;
+margin:0;
+background:#121212;
+color:white;
+font-family:monospace;
+display:flex;
+flex-direction:column;
+height:100vh;
 }
 
 header{
-    padding:10px;
-    background:#1e1e1e;
-    text-align:center;
-    font-weight:bold;
+padding:10px;
+background:#1e1e1e;
+text-align:center;
+font-weight:bold;
 }
 
 .tabs{
-    display:flex;
-    flex-wrap:wrap;
+display:flex;
+flex-wrap:wrap;
 }
 
 .tab{
-    padding:8px 12px;
-    background:#1e1e1e;
-    border:1px solid #333;
-    cursor:pointer;
+padding:8px 12px;
+background:#1e1e1e;
+border:1px solid #333;
+cursor:pointer;
 }
 
 .tab.active{
-    background:#007acc;
-}
-
-#editor{
-    flex:1;
-}
-
-#terminal{
-    height:160px;
-    background:black;
-    padding:10px;
-    overflow:auto;
-    font-size:14px;
+background:#007acc;
 }
 
 button{
-    padding:6px;
-    background:#1e1e1e;
-    color:white;
-    border:1px solid #333;
-    margin:3px;
+padding:6px;
+background:#1e1e1e;
+color:white;
+border:1px solid #333;
+margin:3px;
+}
+
+#terminal{
+height:180px;
+background:black;
+padding:10px;
+overflow:auto;
+font-size:14px;
 }
 
 .success{color:#00ff88;}
 .error{color:#ff4c4c;}
 .info{color:#4da6ff;}
+.warning{color:#ffcc00;}
+
+table{
+border-collapse:collapse;
+width:100%;
+margin-top:5px;
+}
+
+td,th{
+border:1px solid #555;
+padding:5px;
+}
 </style>
 </head>
 
 <body>
 
-<header>Ultimate Mobile IDE</header>
+<header>Ultimate Mobile IDE v2</header>
 
 <div class="tabs">
 <div class="tab active" onclick="switchTab('html',this)">HTML</div>
@@ -112,7 +122,7 @@ let codeData={
 html:"<h1>Hello Raj</h1>",
 css:"h1{color:red;}",
 js:"",
-python:"name=input('Enter name: ')\nprint('Hello',name)",
+python:"print('Hello Raj')",
 sql:""
 };
 
@@ -153,7 +163,7 @@ el.classList.add("active");
 function log(msg,type){
 const div=document.createElement("div");
 div.className=type;
-div.textContent=msg;
+div.innerHTML=msg;
 document.getElementById("terminal").appendChild(div);
 }
 
@@ -179,6 +189,7 @@ document.getElementById("preview").srcdoc=full;
 }
 
 async function runCode(){
+
 codeData[currentTab]=editor.getValue();
 
 if(currentTab==="html"||currentTab==="css"||currentTab==="js"){
@@ -186,35 +197,72 @@ updatePreview();
 log("Preview Updated","success");
 }
 
+/* -------- PYTHON -------- */
 if(currentTab==="python"){
 try{
+
 pyodide.runPython(`
 import sys
-from js import prompt
-def input(x=""):
- return prompt(x)
+from io import StringIO
+sys.stdout = StringIO()
 `);
-let result=await pyodide.runPythonAsync(editor.getValue());
-log(result||"Done","success");
+
+await pyodide.runPythonAsync(editor.getValue());
+
+let printed = pyodide.runPython("sys.stdout.getvalue()");
+
+if(printed){
+log(printed.trim(),"success");
+}else{
+log("Execution completed.","info");
+}
+
 }catch(err){
 log(err,"error");
+log("Check syntax or indentation.","warning");
 }
 }
 
+/* -------- SQL (Selected Only) -------- */
 if(currentTab==="sql"){
 try{
-let result=db.exec(editor.getValue());
+
+let selected = editor.getSelection();
+let sqlCode = selected ? selected : editor.getValue();
+
+let result = db.exec(sqlCode);
+
 if(result.length===0){
-log("Query executed","success");
+log("Query executed successfully.","success");
 }else{
-result[0].values.forEach(row=>{
-log(JSON.stringify(row),"info");
+
+let table="<table><tr>";
+
+result[0].columns.forEach(col=>{
+table+="<th>"+col+"</th>";
 });
+
+table+="</tr>";
+
+result[0].values.forEach(row=>{
+table+="<tr>";
+row.forEach(cell=>{
+table+="<td>"+cell+"</td>";
+});
+table+="</tr>";
+});
+
+table+="</table>";
+
+log(table,"info");
 }
+
 }catch(err){
 log(err,"error");
+log("Check SQL syntax.","warning");
 }
 }
+
 }
 </script>
 
