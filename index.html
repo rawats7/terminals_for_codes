@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pro Mobile IDE</title>
+
+<!-- CodeMirror -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/material.min.css">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.css">
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+body{
+margin:0;
+background:#121212;
+color:white;
+font-family:monospace;
+display:flex;
+flex-direction:column;
+height:100vh;
+}
+
+header{
+padding:10px;
+background:#1e1e1e;
+text-align:center;
+font-weight:bold;
+}
+
+.tabs{display:flex;flex-wrap:wrap;}
+.tab{padding:8px 12px;background:#1e1e1e;border:1px solid #333;cursor:pointer;}
+.tab.active{background:#007acc;}
+
+button,select{
+margin:3px;
+padding:6px;
+background:#1e1e1e;
+color:white;
+border:1px solid #333;
+}
+
+#terminal{
+height:160px;
+background:black;
+padding:10px;
+overflow:auto;
+font-size:14px;
+}
+
+.success{color:#00ff88;}
+.error{color:#ff4c4c;}
+.info{color:#4da6ff;}
+
+table{border-collapse:collapse;width:100%;}
+td,th{border:1px solid #555;padding:5px;}
+</style>
+</head>
+
+<body>
+
+<header>Pro Mobile IDE</header>
+
+<div>
+<select id="projectSelect" onchange="loadProject()"></select>
+<button onclick="newProject()">New</button>
+<button onclick="deleteProject()">Delete</button>
+<button onclick="downloadZIP()">Download ZIP</button>
+<button onclick="toggleTheme()">Theme</button>
+</div>
+
+<div class="tabs">
+<div class="tab active" onclick="switchTab('html',this)">HTML</div>
+<div class="tab" onclick="switchTab('css',this)">CSS</div>
+<div class="tab" onclick="switchTab('js',this)">JS</div>
+<div class="tab" onclick="switchTab('python',this)">Python</div>
+<div class="tab" onclick="switchTab('sql',this)">SQL</div>
+</div>
+
+<textarea id="code"></textarea>
+
+<div>
+<button onclick="runCode()">Run</button>
+<button onclick="clearTerminal()">Clear</button>
+</div>
+
+<iframe id="preview" style="height:200px;border:none;"></iframe>
+<div id="terminal"></div>
+
+<script>
+let currentTab="html";
+let currentProject="default";
+let dark=true;
+let pyodide;
+let db;
+
+const editor=CodeMirror.fromTextArea(document.getElementById("code"),{
+lineNumbers:true,
+mode:"xml",
+theme:"material",
+extraKeys: {"Ctrl-Space": "autocomplete"}
+});
+
+let projects=JSON.parse(localStorage.getItem("projects"))||{
+"default":{
+html:"<h1>Hello</h1>",
+css:"h1{color:red;}",
+js:"",
+python:"print('Hello')",
+sql:""
+}
+};
+
+function saveProjects(){
+localStorage.setItem("projects",JSON.stringify(projects));
+}
+
+function populateProjects(){
+const select=document.getElementById("projectSelect");
+select.innerHTML="";
+for(let name in projects){
+let opt=document.createElement("option");
+opt.value=name;
+opt.textContent=name;
+select.appendChild(opt);
+}
+select.value=currentProject;
+}
+
+function loadProject(){
+currentProject=document.getElementById("projectSelect").value;
+editor.setValue(projects[currentProject][currentTab]);
+}
+
+function newProject(){
+let name=prompt("Project name:");
+if(!name)return;
+projects[name]={html:"",css:"",js:"",python:"",sql:""};
+currentProject=name;
+saveProjects();
+populateProjects();
+loadProject();
+}
+
+function deleteProject(){
+if(currentProject==="default")return;
+delete projects[currentProject];
+currentProject="default";
+saveProjects();
+populateProjects();
+loadProject();
+}
+
+populateProjects();
+editor.setValue(projects[currentProject][currentTab]);
+
+async function init(){
+pyodide=await loadPyodide();
+const SQL=await initSqlJs({
+locateFile:file=>
+`https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+});
+db=new SQL.Database();
+}
+init();
+
+function switchTab(tab,el){
+projects[currentProject][currentTab]=editor.getValue();
+currentTab=tab;
+editor.setValue(projects[currentProject][tab]);
+
+if(tab==="html")editor.setOption("mode","xml");
+if(tab==="css")editor.setOption("mode","css");
+if(tab==="js")editor.setOption("mode","javascript");
+if(tab==="python")editor.setOption("mode","python");
+if(tab==="sql")editor.setOption("mode","sql");
+
+document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+el.classList.add("active");
+saveProjects();
+}
+
+function log(msg,type){
+const div=document.createElement("div");
+div.className=type;
+div.innerHTML=msg;
+document.getElementById("terminal").appendChild(div);
+}
+
+function clearTerminal(){
+document.getElementById("terminal").innerHTML="";
+}
+
+function toggleTheme(){
+dark=!dark;
+editor.setOption("theme",dark?"material":"default");
+}
+
+function updatePreview(){
+const full=`
+<html>
+<head><style>${projects[currentProject].css}</style></head>
+<body>
+${projects[currentProject].html}
+<script>${projects[currentProject].js}<\/script>
+</body>
+</html>`;
+document.getElementById("preview").srcdoc=full;
+}
+
+async function runCode(){
+projects[currentProject][currentTab]=editor.getValue();
+saveProjects();
+
+if(currentTab==="html"||currentTab==="css"||currentTab==="js"){
+updatePreview();
+log("Preview Updated","success");
+}
+
+if(currentTab==="python"){
+try{
+pyodide.runPython(`
+import sys
+from js import prompt
+def input(x=""):
+ return prompt(x)
+`);
+let result=await pyodide.runPythonAsync(editor.getValue());
+log(result||"Done","success");
+}catch(err){
+log(err,"error");
+}
+}
+
+if(currentTab==="sql"){
+try{
+let result=db.exec(editor.getValue());
+if(result.length===0){
+log("Query executed","success");
+}else{
+let table="<table><tr>";
+result[0].columns.forEach(c=>table+="<th>"+c+"</th>");
+table+="</tr>";
+result[0].values.forEach(row=>{
+table+="<tr>";
+row.forEach(cell=>table+="<td>"+cell+"</td>");
+table+="</tr>";
+});
+table+="</table>";
+log(table,"info");
+}
+}catch(err){
+log(err,"error");
+}
+}
+}
+
+async function downloadZIP(){
+const zip=new JSZip();
+for(let file in projects[currentProject]){
+zip.file(file+".txt",projects[currentProject][file]);
+}
+const content=await zip.generateAsync({type:"blob"});
+const link=document.createElement("a");
+link.href=URL.createObjectURL(content);
+link.download=currentProject+".zip";
+link.click();
+}
+</script>
+
+</body>
+</html>
