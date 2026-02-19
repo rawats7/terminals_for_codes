@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Pro Browser IDE</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<style>
+body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    background: #1e1e1e;
+    color: white;
+    font-family: sans-serif;
+}
+
+#editor-container {
+    width: 50%;
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid #333;
+}
+
+#tabs {
+    display: flex;
+    background: #2d2d2d;
+}
+
+.tab {
+    padding: 10px 20px;
+    cursor: pointer;
+}
+
+.tab.active {
+    background: #007acc;
+}
+
+#editor {
+    flex: 1;
+}
+
+#preview {
+    width: 50%;
+    border: none;
+    background: white;
+}
+
+.top-bar {
+    background: #111;
+    padding: 6px;
+    display: flex;
+    gap: 10px;
+}
+button {
+    background: #007acc;
+    border: none;
+    padding: 6px 12px;
+    color: white;
+    cursor: pointer;
+}
+button:hover {
+    background: #0094ff;
+}
+</style>
+</head>
+
+<body>
+
+<div id="editor-container">
+
+    <div class="top-bar">
+        <button onclick="exportZIP()">Export ZIP</button>
+        <input type="file" id="importFile" onchange="importZIP(event)">
+    </div>
+
+    <div id="tabs">
+        <div class="tab active" onclick="switchTab('html', this)">HTML</div>
+        <div class="tab" onclick="switchTab('css', this)">CSS</div>
+        <div class="tab" onclick="switchTab('js', this)">JS</div>
+    </div>
+
+    <div id="editor"></div>
+
+</div>
+
+<iframe id="preview"></iframe>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+
+<script>
+let currentTab = "html";
+let codeData = {
+    html: localStorage.getItem("html") || "<h1>Hello Raj</h1>",
+    css: localStorage.getItem("css") || "h1 { color: red; }",
+    js: localStorage.getItem("js") || "console.log('Hello');"
+};
+
+require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
+require(["vs/editor/editor.main"], function () {
+
+    window.editor = monaco.editor.create(document.getElementById("editor"), {
+        value: codeData[currentTab],
+        language: currentTab,
+        theme: "vs-dark",
+        automaticLayout: true
+    });
+
+    editor.onDidChangeModelContent(() => {
+        codeData[currentTab] = editor.getValue();
+        localStorage.setItem(currentTab, editor.getValue());
+        updatePreview();
+    });
+
+    updatePreview();
+});
+
+function switchTab(tab, element) {
+    codeData[currentTab] = editor.getValue();
+    localStorage.setItem(currentTab, editor.getValue());
+
+    currentTab = tab;
+
+    monaco.editor.setModelLanguage(editor.getModel(), tab);
+    editor.setValue(codeData[tab]);
+
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    element.classList.add("active");
+}
+
+function updatePreview() {
+    const fullCode = `
+        <html>
+        <head>
+        <style>${codeData.css}</style>
+        </head>
+        <body>
+        ${codeData.html}
+        <script>${codeData.js}<\/script>
+        </body>
+        </html>
+    `;
+    document.getElementById("preview").srcdoc = fullCode;
+}
+
+function exportZIP() {
+    const zip = new JSZip();
+
+    zip.file("index.html", codeData.html);
+    zip.file("style.css", codeData.css);
+    zip.file("script.js", codeData.js);
+
+    zip.generateAsync({type:"blob"}).then(function(content) {
+        saveAs(content, "project.zip");
+    });
+}
+
+function importZIP(event) {
+    const file = event.target.files[0];
+    const zip = new JSZip();
+
+    zip.loadAsync(file).then(function(contents) {
+        contents.file("index.html").async("string").then(data => {
+            codeData.html = data;
+            localStorage.setItem("html", data);
+        });
+        contents.file("style.css").async("string").then(data => {
+            codeData.css = data;
+            localStorage.setItem("css", data);
+        });
+        contents.file("script.js").async("string").then(data => {
+            codeData.js = data;
+            localStorage.setItem("js", data);
+        });
+
+        setTimeout(() => {
+            editor.setValue(codeData[currentTab]);
+            updatePreview();
+        }, 300);
+    });
+}
+</script>
+
+</body>
+</html>
