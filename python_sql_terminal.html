@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate Mobile Playground</title>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+body{
+    margin:0;
+    background:#121212;
+    color:white;
+    font-family:monospace;
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+}
+
+header{
+    background:#1e1e1e;
+    padding:10px;
+    text-align:center;
+    font-weight:bold;
+}
+
+.controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    padding:5px;
+}
+
+select,button,input{
+    padding:6px;
+    background:#1e1e1e;
+    color:white;
+    border:1px solid #333;
+}
+
+textarea{
+    flex:1;
+    background:#1e1e1e;
+    color:#00ff88;
+    border:none;
+    padding:10px;
+    resize:none;
+    outline:none;
+}
+
+#terminal{
+    min-height:150px;
+    background:black;
+    padding:10px;
+    overflow:auto;
+    font-size:14px;
+}
+
+/* Terminal colors */
+.success{ color:#00ff88; }
+.error{ color:#ff4c4c; }
+.info{ color:#4da6ff; }
+.warning{ color:#ffcc00; }
+.userinput{ color:#ffffff; }
+</style>
+</head>
+
+<body>
+
+<header>Ultimate Mobile Code Playground</header>
+
+<div class="controls">
+<select id="language">
+<option value="python">Python</option>
+<option value="sql">SQL</option>
+</select>
+
+<select id="colorPicker">
+<option value="#00ff88">Green</option>
+<option value="#ffffff">White</option>
+<option value="#ffcc00">Yellow</option>
+<option value="#4da6ff">Blue</option>
+<option value="#ff4c4c">Red</option>
+</select>
+
+<select id="colorMode">
+<option value="all">Change Whole Editor</option>
+<option value="next">Change Next Line Only</option>
+</select>
+
+<button onclick="applyColor()">Apply Color</button>
+<button onclick="runCode()">Run</button>
+<button onclick="clearTerminal()">Clear</button>
+<button onclick="downloadFile()">Download File</button>
+<button onclick="downloadZIP()">Download ZIP</button>
+</div>
+
+<textarea id="code">print("Hello Raj")</textarea>
+
+<div id="terminal"></div>
+
+<script>
+let pyodide;
+let db;
+
+const codeArea = document.getElementById("code");
+const terminal = document.getElementById("terminal");
+
+async function init(){
+    pyodide = await loadPyodide();
+
+    const SQL = await initSqlJs({
+        locateFile: file =>
+        `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+    });
+
+    db = new SQL.Database();
+}
+init();
+
+function log(message, type){
+    const div = document.createElement("div");
+    div.className = type;
+    div.textContent = message;
+    terminal.appendChild(div);
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
+function clearTerminal(){
+    terminal.innerHTML="";
+}
+
+function applyColor(){
+    const color = document.getElementById("colorPicker").value;
+    const mode = document.getElementById("colorMode").value;
+
+    if(mode==="all"){
+        codeArea.style.color = color;
+    }else{
+        const lines = codeArea.value.split("\n");
+        const cursor = codeArea.selectionStart;
+        const before = codeArea.value.substring(0,cursor);
+        const lineIndex = before.split("\n").length - 1;
+        lines[lineIndex] = "%c" + lines[lineIndex];
+        codeArea.value = lines.join("\n");
+        codeArea.style.color = color;
+    }
+}
+
+async function runCode(){
+    const lang = document.getElementById("language").value;
+    const code = codeArea.value;
+
+    log(">>> Executing...", "info");
+
+    if(lang==="python"){
+        try{
+            pyodide.runPython(`
+import sys
+from io import StringIO
+sys.stdout = StringIO()
+            `);
+
+            await pyodide.runPythonAsync(code);
+
+            const printed = pyodide.runPython("sys.stdout.getvalue()");
+            if(printed){
+                log(printed.trim(), "success");
+            }else{
+                log("Execution completed.", "success");
+            }
+
+        }catch(err){
+            log(err, "error");
+            log("Suggestion: Check syntax or indentation.", "warning");
+        }
+    }
+
+    if(lang==="sql"){
+        try{
+            const result = db.exec(code);
+
+            if(result.length===0){
+                log("Query executed successfully.", "success");
+            }else{
+                log("Query returned:", "info");
+                result[0].values.forEach(row=>{
+                    log(JSON.stringify(row), "success");
+                });
+            }
+
+        }catch(err){
+            log(err, "error");
+            log("Suggestion: Check SQL syntax.", "warning");
+        }
+    }
+}
+
+function downloadFile(){
+    const blob = new Blob([codeArea.value], {type:"text/plain"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = document.getElementById("language").value+".txt";
+    link.click();
+}
+
+async function downloadZIP(){
+    const zip = new JSZip();
+    zip.file("code.txt", codeArea.value);
+
+    const content = await zip.generateAsync({type:"blob"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(content);
+    link.download = "project.zip";
+    link.click();
+}
+</script>
+
+</body>
+</html>
